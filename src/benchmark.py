@@ -168,5 +168,11 @@ def benchmark():
     print("=" * 60)
 
 if __name__ == "__main__":
-    run_correctness_tests()
-    benchmark()
+    try:
+        run_correctness_tests()
+        benchmark()
+    except Exception as e:
+        print(f"\n[ERROR] Ocurrió un error inesperado durante la ejecución: {e}")
+    finally:
+        input("\nPresiona Enter para salir...")
+
