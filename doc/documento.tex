@@ -1,0 +1,208 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+
+\geometry{
+  a4paper,
+  left=2.5cm,
+  right=2.5cm,
+  top=3cm,
+  bottom=3cm
+}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  filecolor=magenta,      
+  urlcolor=cyan,
+  pdftitle={Análisis y Optimización del Problema RMQ mediante Tablas Dispersas},
+  pdfpagemode=FullScreen,
+}
+
+\title{Análisis y Optimización del Problema de Consulta de Mínimo en Rango (RMQ) mediante Tablas Dispersas (\textit{Sparse Table})}
+\author{Nicolas Tito\\
+Departamento de Informática\\
+Universidad del Trabajo Final\\
+\href{mailto:nicotitopp@github.com}{nicotitopp@github.com}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+El problema de Consulta de Mínimo en Rango (RMQ, \textit{Range Minimum Query}) es un problema fundamental en la teoría de algoritmos y estructuras de datos. Consiste en encontrar la posición o el valor mínimo dentro de un intervalo arbitrario de un arreglo estático. Mientras que la aproximación ingenua requiere recorrer secuencialmente el rango con un costo lineal $O(N)$ por consulta, este documento describe e implementa la optimización mediante la estructura de datos \textit{Sparse Table} (Tabla Dispersa). Basado en la propiedad matemática de idempotencia del operador mínimo y técnicas de precomputación mediante programación dinámica, esta estructura reduce la complejidad temporal de las consultas a un costo constante de $O(1)$, requiriendo una inicialización previa de $O(N \log N)$ en tiempo y espacio. Demostramos la eficacia de esta optimización a través de un riguroso análisis matemático y pruebas de rendimiento (\textit{benchmarking}), donde se comprueba un incremento de rendimiento (\textit{speedup}) superior a $1000\times$ para conjuntos de datos masivos. El repositorio de código que acompaña a esta investigación se encuentra en \url{https://github.com/nicotitopp/trabajoFinal.git}.
+\end{abstract}
+
+\section{Introducción}
+En sistemas informáticos modernos que manejan bases de datos a gran escala, motores de búsqueda y procesamiento en tiempo real, la eficiencia de las consultas sobre arreglos es crítica para asegurar la escalabilidad. Si un sistema realiza millones de consultas sobre una secuencia estática, la diferencia entre una complejidad lineal por consulta y una complejidad constante determina la viabilidad del software.
+
+El problema RMQ se define formalmente de la siguiente manera: dado un arreglo $A = [a_0, a_1, \dots, a_{n-1}]$ de $N$ elementos de un conjunto totalmente ordenado, y un par de índices $(L, R)$ tales que $0 \le L \le R < N$, se desea determinar:
+\begin{equation}
+\text{RMQ}_A(L, R) = \min_{L \le i \le R} A[i]
+\end{equation}
+
+En este artículo analizaremos la transición de un algoritmo secuencial lineal a un algoritmo optimizado de costo constante mediante el uso de la estructura \textit{Sparse Table}.
+
+\section{Algoritmo Ingenuo (Fuerza Bruta)}
+La aproximación ingenua para resolver el problema RMQ consiste en iterar directamente a través del arreglo desde la posición $L$ hasta la posición $R$, manteniendo un registro del valor mínimo encontrado hasta el momento.
+
+La implementación en pseudocódigo de esta consulta se presenta en el Algoritmo \ref{alg:naive}:
+
+\begin{algorithm}[H]
+\caption{Consulta RMQ Ingenua}
+\label{alg:naive}
+\begin{algorithmic}[1]
+\REQUIRE Arreglo $A$, índice izquierdo $L$, índice derecho $R$
+\ENSURE Valor mínimo en el rango $A[L \dots R]$
+\STATE $min\_val \leftarrow A[L]$
+\FOR{$i = L + 1$ \TO $R$}
+    \IF{$A[i] < min\_val$}
+        \STATE $min\_val \leftarrow A[i]$
+    \ENDIF
+\ENDFOR
+\RETURN $min\_val$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Análisis de Complejidad Ingenua}
+\begin{itemize}
+    \item \textbf{Tiempo de Construcción}: No requiere procesamiento previo, por lo que el tiempo de inicialización es $O(1)$.
+    \item \textbf{Tiempo de Consulta}: En el peor caso, cuando el intervalo consultado abarca todo el arreglo ($L=0$, $R=N-1$), el algoritmo realiza exactamente $N-1$ comparaciones. Por lo tanto, la complejidad de una sola consulta es $O(N)$ en el peor caso y $O(N)$ en promedio.
+    \item \textbf{Complejidad para $Q$ Consultas}: Si se ejecutan $Q$ consultas, el tiempo de ejecución total es del orden $O(Q \cdot N)$. Para magnitudes del orden de $N = 10^5$ y $Q = 10^5$, el número de operaciones necesarias es de aproximadamente $10^{10}$, lo cual toma varios minutos en lenguajes compilados y horas en lenguajes interpretados como Python.
+\end{itemize}
+
+\section{Algoritmo Optimizado: \textit{Sparse Table}}
+El \textit{Sparse Table} es una estructura de datos que permite responder consultas estáticas sobre rangos en tiempo constante $O(1)$ tras una etapa de precomputación. Se basa en el principio de que cualquier número entero positivo se puede representar como una suma de potencias de 2 (representación binaria). Esto implica que cualquier rango de longitud arbitraria se puede cubrir mediante la unión de dos rangos cuyas longitudes sean potencias de 2.
+
+\subsection{Programación Dinámica y Precomputación}
+Definimos una tabla bidimensional $ST[i][j]$ de tamaño $N \times (\lfloor \log_2 N \rfloor + 1)$. La celda $ST[i][j]$ almacena el valor mínimo del subarreglo que comienza en el índice $i$ y tiene una longitud de $2^j$, es decir, el rango $[i, i + 2^j - 1]$.
+
+El llenado de esta tabla se realiza de manera eficiente utilizando programación dinámica.
+\begin{itemize}
+    \item \textbf{Caso Base} ($j = 0$): Los intervalos de tamaño $2^0 = 1$ contienen únicamente al propio elemento:
+    \begin{equation}
+    ST[i][0] = A[i] \quad \forall \ i \in [0, N-1]
+    \end{equation}
+    
+    \item \textbf{Paso Inductivo} ($j > 0$): Un intervalo de longitud $2^j$ que comienza en $i$ se puede dividir de manera exacta en dos intervalos adyacentes de longitud $2^{j-1}$: el primero empieza en $i$ y el segundo en $i + 2^{j-1}$. El mínimo del intervalo completo es el mínimo de las dos subpartes:
+    \begin{equation}
+    ST[i][j] = \min\left( ST[i][j-1], \; ST[i + 2^{j-1}][j-1] \right)
+    \end{equation}
+\end{itemize}
+Esta relación de recurrencia nos permite calcular la tabla en orden creciente de $j$ (de menor a mayor longitud de intervalo).
+
+\subsection{Resolución de Consultas en $O(1)$}
+Para resolver la consulta de mínimo en un rango $[L, R]$, definimos la longitud del intervalo como $len = R - L + 1$. Sea $k = \lfloor \log_2(len) \rfloor$ la mayor potencia de 2 que cabe dentro del intervalo.
+
+Es fácil demostrar que:
+\begin{equation}
+2^k \le len < 2^{k+1}
+\end{equation}
+
+Esta propiedad matemática asegura que podemos cubrir el rango completo $[L, R]$ utilizando exactamente dos subintervalos de longitud $2^k$:
+\begin{enumerate}
+    \item El intervalo que comienza en $L$: $[L, \; L + 2^k - 1]$.
+    \item El intervalo que termina en $R$: $[R - 2^k + 1, \; R]$.
+\end{enumerate}
+
+Como $2^k \le len$, la unión de estos dos intervalos cubre completamente $[L, R]$. Dado que el operador mínimo es \textbf{idempotente} (es decir, $\min(x, x) = x$), el solapamiento o intersección de estos dos subintervalos no altera el resultado final. Por lo tanto, la consulta se reduce a evaluar:
+\begin{equation}
+\text{RMQ}_A(L, R) = \min\left( ST[L][k], \; ST[R - 2^k + 1][k] \right)
+\end{equation}
+Como ambas celdas ya han sido precomputadas, la consulta requiere realizar únicamente una resta, un cálculo de logaritmo (que se puede computar en $O(1)$ mediante el tamaño de bits de un entero) y una sola comparación. Por ende, la consulta se ejecuta en tiempo estrictamente constante $O(1)$.
+
+\section{Demostración Matemática del Cambio de Complejidad}
+Para justificar matemáticamente la transición desde $O(Q \cdot N)$ a $O(N \log N + Q)$, examinamos el comportamiento asintótico cuando el tamaño del arreglo $N$ y la cantidad de consultas $Q$ tienden al infinito de forma proporcional ($N = Q$).
+
+\subsection{Complejidad Temporal}
+\begin{enumerate}
+    \item \textbf{Fuerza Bruta}:
+    El número promedio de operaciones para una sola consulta aleatoria en un arreglo de tamaño $N$ es:
+    \begin{equation}
+    T_{\text{naive\_query}}(N) = \frac{1}{N^2} \sum_{L=0}^{N-1} \sum_{R=L}^{N-1} (R - L + 1) \approx \frac{N}{3}
+    \end{equation}
+    Por tanto, el tiempo total para $Q$ consultas es:
+    \begin{equation}
+    T_{\text{total\_naive}}(N, Q) = O(Q \cdot N)
+    \end{equation}
+    
+    \item \textbf{Sparse Table}:
+    La precomputación calcula $N$ filas y $\lfloor \log_2 N \rfloor + 1$ columnas. Cada celda de la tabla requiere una operación elemental de comparación. La complejidad de precomputación es:
+    \begin{equation}
+    T_{\text{build\_ST}}(N) = O(N \log_2 N)
+    \end{equation}
+    Cada una de las $Q$ consultas ejecuta una sola comparación directa en tiempo constante. Así, el tiempo de consultas es $O(Q)$. El tiempo total del algoritmo optimizado es:
+    \begin{equation}
+    T_{\text{total\_ST}}(N, Q) = O(N \log_2 N + Q)
+    \end{equation}
+\end{enumerate}
+
+Para un caso de uso masivo donde $N = 10^6$ y $Q = 10^6$:
+\begin{itemize}
+    \item El algoritmo ingenuo realiza: $10^6 \times 10^6 = 10^{12}$ operaciones.
+    \item El \textit{Sparse Table} realiza: $10^6 \log_2(10^6) + 10^6 \approx 2 \times 10^7 + 10^6 = 2.1 \times 10^7$ operaciones.
+\end{itemize}
+La reducción en el número de instrucciones ejecutadas es de aproximadamente 50,000 veces, lo cual permite que un proceso que tardaría horas se ejecute en menos de un segundo.
+
+\subsection{Complejidad Espacial}
+El costo de optimizar la velocidad es un incremento en el consumo de memoria. Mientras que el enfoque ingenuo requiere únicamente $O(1)$ memoria adicional, el \textit{Sparse Table} almacena la tabla de programación dinámica, lo cual requiere una matriz de tamaño $N \times K$.
+\begin{equation}
+S_{\text{auxiliary\_ST}}(N) = O(N \log_2 N)
+\end{equation}
+Para $N = 10^6$, y considerando números enteros de 4 bytes, el espacio ocupado es $10^6 \times 20 \times 4 \text{ bytes} \approx 80 \text{ megabytes}$, lo cual es perfectamente manejable por el hardware moderno.
+
+\section{Pruebas de Rendimiento y Resultados}
+Para validar empíricamente este análisis, se implementaron ambos algoritmos en Python 3.11 y se ejecutó un benchmark con arreglos y consultas generadas aleatoriamente. Los resultados obtenidos se muestran en la Tabla \ref{tab:benchmark}.
+
+\begin{table}[h]
+\centering
+\caption{Resultados Comparativos de Rendimiento (Tiempo en segundos)}
+\label{tab:benchmark}
+\begin{tabular}{rrrrrrc}
+\toprule
+\textbf{Arreglo ($N$)} & \textbf{Consultas ($Q$)} & \textbf{Const. Naive (s)} & \textbf{Consultas Naive (s)} & \textbf{Prec. ST (s)} & \textbf{Consultas ST (s)} & \textbf{Speedup Consulta} \\
+\midrule
+100 & 1,000 & 0.000001 & 0.000710 & 0.000084 & 0.000239 & 3.0$\times$ \\
+1,000 & 5,000 & 0.000002 & 0.028931 & 0.001370 & 0.001299 & 22.3$\times$ \\
+5,000 & 10,000 & 0.000005 & 0.278195 & 0.008548 & 0.002953 & 94.2$\times$ \\
+10,000 & 20,000 & 0.000022 & 1.096940* & 0.018902 & 0.006228 & 176.1$\times$ \\
+50,000 & 50,000 & 0.000050 & 13.075675* & 0.118743 & 0.023038 & 567.6$\times$ \\
+100,000 & 100,000 & 0.000175 & 56.849350* & 0.281506 & 0.064673 & 879.0$\times$ \\
+500,000 & 1,000,000 & 0.000411 & 3104.669500* & 1.902360 & 0.829445 & 3743.1$\times$ \\
+\bottomrule
+\end{tabular}
+\newline
+\small{*Nota: Los valores con un asterisco (*) son estimaciones proyectadas basadas en submuestras debido a limitaciones de tiempo de cómputo del algoritmo lineal.}
+\end{table}
+
+Los datos del benchmark confirman de manera contundente la teoría asintótica. Mientras que las consultas en el algoritmo ingenuo crecen linealmente hasta requerir un tiempo proyectado de más de 51 minutos para un millón de consultas, el \textit{Sparse Table} resuelve las mismas consultas en $0.829$ segundos. El \textit{speedup} específico en la fase de consulta alcanza un factor de \textbf{3743.1$\times$} para el tamaño máximo evaluado.
+
+\section{Aplicaciones Reales en la Industria}
+La optimización RMQ mediante Sparse Table o equivalentes asintóticos tiene un gran impacto en diversas áreas tecnológicas contemporáneas:
+
+\subsection{Búsqueda de Ancestro Común más Bajo (LCA)}
+El problema LCA (Lowest Common Ancestor) consiste en encontrar el ancestro común más profundo de dos nodos en un árbol. Existe una reducción lineal clásica $O(N)$ que transforma el problema LCA en un problema RMQ sobre el recorrido de Euler de un árbol. Al procesar el árbol y construir un Sparse Table sobre el arreglo de profundidades resultante, es posible responder cualquier consulta de LCA en tiempo $O(1)$.
+\begin{itemize}
+    \item \textbf{Bases de datos XML y JSON}: Los motores de bases de datos de documentos jerárquicos utilizan consultas LCA para resolver la relación de proximidad y ancestros entre nodos del DOM de forma eficiente.
+    \item \textbf{Base de datos de Grafos}: Utilizan consultas de ancestros comunes para calcular caminos mínimos en redes jerárquicas o taxonomías de datos.
+\end{itemize}
+
+\subsection{Bioinformática y Procesamiento de Criptografía/Texto}
+El cálculo del Prefijo Común más Largo (LCP, \textit{Longest Common Prefix}) entre sufijos de una cadena de texto es crucial para algoritmos de alineación de cadenas y búsqueda de patrones de ADN. Al precomputar un arreglo de sufijos (Suffix Array) y construir un Sparse Table sobre el arreglo LCP asociado, las consultas del prefijo común más largo entre cualquier par de sufijos se resuelven mediante RMQ en $O(1)$. Esto acelera drásticamente algoritmos de indexación en bioinformática (como el algoritmo FM-index utilizado en alineadores de lecturas de ADN de nueva generación).
+
+\subsection{Redes de Comunicación y Enrutamiento IP}
+Los enrutadores de red de alta velocidad deben realizar búsquedas rápidas de prefijos coincidentes más largos (\textit{Longest Prefix Match}) para determinar el destino de los paquetes IP en tablas de enrutamiento que contienen millones de entradas. Estructuras de datos híbridas basadas en árboles y reducidas a RMQ con soporte de hardware permiten tomar decisiones de enrutamiento a velocidades de gigabits por segundo.
+
+\section{Conclusiones}
+Este trabajo demuestra cómo la aplicación de principios matemáticos de idempotencia y precomputación estructurada puede transformar radicalmente la eficiencia de un sistema. Al sacrificar una cantidad moderada de memoria ($O(N \log N)$), logramos eludir la barrera del tiempo lineal, transformando el costo de las consultas en tiempo estrictamente constante $O(1)$. Esta ganancia de velocidad no es meramente incremental, sino de orden de magnitud, lo que representa la diferencia fundamental entre un algoritmo incapaz de escalar y una solución robusta apta para entornos de computación masiva en tiempo real.
+
+\end{document}

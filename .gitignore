@@ -1,0 +1,16 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# LaTeX auxiliary files
+*.aux
+*.log
+*.out
+*.toc
+*.pdf
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.blg
+*.bbl
